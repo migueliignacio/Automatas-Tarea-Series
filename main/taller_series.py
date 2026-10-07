@@ -14,59 +14,81 @@ DIGITOS = string.digits
 POSITIVOS = "123456789"
 ALFANUMERICOS = LETRAS + DIGITOS
 ALFABETO = frozenset(ALFANUMERICOS + "_().")
+
+# Estados exactamente como en el AFD del diagrama.
 INICIAL = "q0"
-FINAL = "q_final"
-SUMIDERO = "q_error"
+FINAL = "q23"
+SUMIDERO = "qs"
 ARCHIVO_JSON = Path(__file__).with_name("historial_series.json")
 
-# Cada fila: estado de origen, símbolos permitidos, estado de destino.
-# Los conjuntos de símbolos de las filas de un mismo origen son disjuntos.
+# Cada regla representa una flecha del AFD:
+# (estado_origen, simbolos_permitidos, estado_destino)
 REGLAS = [
-    ("q0", ALFANUMERICOS, "q_nombre"),
-    ("q_nombre", ALFANUMERICOS, "q_nombre"),
-    ("q_nombre", "_", "q_guion"),
-    ("q_guion", ALFANUMERICOS, "q_nombre"),
-    ("q_guion", "(", "q_anio"),
-    ("q_anio", "1", "q_1"),
-    ("q_anio", "2", "q_2"),
-    ("q_1", "9", "q_19"),
-    ("q_19", DIGITOS, "q_19d"),
-    ("q_19d", DIGITOS, "q_anio_fin"),
-    ("q_2", "0", "q_20"),
-    ("q_20", "01", "q_200_201"),
-    ("q_200_201", DIGITOS, "q_anio_fin"),
-    ("q_20", "2", "q_202"),
-    ("q_202", "0123456", "q_anio_fin"),
-    ("q_anio_fin", ")", "q_parentesis"),
-    ("q_parentesis", "_", "q_separador"),
-    ("q_separador", "S", "q_S"),
-    ("q_S", POSITIVOS, "q_temporada"),
-    ("q_temporada", DIGITOS, "q_temporada"),
-    ("q_temporada", "E", "q_E"),
-    ("q_E", "0", "q_ep_un_cero"),
-    ("q_E", POSITIVOS, "q_ep_un_positivo"),
-    ("q_ep_un_cero", "0", "q_ep_ceros"),
-    ("q_ep_un_cero", POSITIVOS, "q_episodio"),
-    ("q_ep_un_positivo", DIGITOS, "q_episodio"),
-    ("q_ep_ceros", "0", "q_ep_ceros"),
-    ("q_ep_ceros", POSITIVOS, "q_episodio"),
-    ("q_episodio", DIGITOS, "q_episodio"),
-    ("q_episodio", ".", "q_punto"),
-    ("q_punto", string.ascii_lowercase, "q_ext1"),
-    ("q_ext1", string.ascii_lowercase, "q_ext2"),
-    ("q_ext2", string.ascii_lowercase, FINAL),
+    # Nombre de la serie: Bocchi_the_Rock_
+    ("q0", ALFANUMERICOS, "q1"),
+    ("q1", ALFANUMERICOS, "q1"),
+    ("q1", "_", "q2"),
+    ("q2", ALFANUMERICOS, "q1"),
+    ("q2", "(", "q3"),
+
+    # Año entre 1900 y 2026
+    ("q3", "1", "q4"),
+    ("q3", "2", "q5"),
+
+    # Rama 19xx
+    ("q4", "9", "q6"),
+    ("q6", DIGITOS, "q8"),
+    ("q8", DIGITOS, "q10"),
+    ("q10", ")", "q12"),
+
+    # Rama 2000-2019
+    ("q5", "0", "q7"),
+    ("q7", "01", "q24"),
+    ("q24", DIGITOS, "q11"),
+
+    # Rama 2020-2026
+    ("q7", "2", "q9"),
+    ("q9", "0123456", "q11"),
+    ("q11", ")", "q12"),
+
+    # Separador y temporada: _S1, _S2, ...
+    ("q12", "_", "q13"),
+    ("q13", "S", "q14"),
+    ("q14", POSITIVOS, "q15"),
+    ("q15", DIGITOS, "q15"),
+    ("q15", "E", "q16"),
+
+    # Episodio con al menos dos dígitos.
+    # Ejemplo E07: q16 --0--> q17 --7--> q19
+    ("q16", "0", "q17"),
+    ("q16", POSITIVOS, "q18"),
+    ("q17", "0", "q17"),
+    ("q17", POSITIVOS, "q19"),
+    ("q18", DIGITOS, "q25"),
+    ("q19", DIGITOS, "q19"),
+    ("q25", DIGITOS, "q25"),
+
+    # Punto y extensión de 3 letras: .mkv
+    ("q19", ".", "q20"),
+    ("q25", ".", "q20"),
+    ("q20", string.ascii_lowercase, "q21"),
+    ("q21", string.ascii_lowercase, "q22"),
+    ("q22", string.ascii_lowercase, "q23"),
 ]
 
-ESTADOS = frozenset(
-    {INICIAL, FINAL, SUMIDERO}
-    | {origen for origen, _, _ in REGLAS}
-    | {destino for _, _, destino in REGLAS}
-)
-# Función total delta: todo par no especificado conduce al sumidero.
+# Incluimos q0...q25 y qs para que los nombres de estado coincidan
+# con el diagrama, aunque algunas rutas no usen todos a la vez.
+ESTADOS = frozenset({f"q{i}" for i in range(26)} | {SUMIDERO})
+
+# Toda transición no dibujada en el AFD cae al estado basura qs.
 TRANSICIONES = {(q, c): SUMIDERO for q in ESTADOS for c in ALFABETO}
 for origen, simbolos, destino in REGLAS:
     for simbolo in simbolos:
         TRANSICIONES[origen, simbolo] = destino
+
+# qs es estado basura: una vez se entra, no se puede salir.
+for simbolo in ALFABETO:
+    TRANSICIONES[SUMIDERO, simbolo] = SUMIDERO
 
 
 def simular_afd(cadena):
